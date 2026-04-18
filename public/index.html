@@ -3,54 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GDLR | National Registry Control</title>
+    <title>GDLR | Global Land Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-slate-950 text-slate-300 min-h-screen p-6">
-    <div class="max-w-5xl mx-auto">
-        <header class="flex justify-between items-center border-b border-slate-800 pb-6 mb-8">
-            <div>
-                <h1 class="text-2xl font-bold text-emerald-400 flex items-center gap-2">
-                    <i data-lucide="shield-check"></i> GDLR Core Engine
-                </h1>
-                <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">National Digital Land Registry v1.0</p>
+<body class="bg-slate-950 text-slate-300 flex h-screen overflow-hidden">
+    
+    <canvas id="bg-canvas"></canvas>
+
+    <aside class="w-72 bg-slate-900/90 border-r border-slate-800 flex flex-col z-20 shrink-0">
+        <div class="p-8 border-b border-slate-800">
+            <h1 class="text-xl font-black text-emerald-400 flex items-center gap-3 tracking-tighter">
+                <i data-lucide="globe"></i> GLOBAL REGISTRY
+            </h1>
+            <p class="text-[9px] text-slate-500 font-bold uppercase tracking-[0.3em] mt-2 italic text-center">3NF/4NF Normalized</p>
+        </div>
+
+        <nav class="flex-1 p-6 space-y-2 overflow-y-auto">
+            <div onclick="switchView('ops')" id="nav-ops" class="nav-link active">
+                <i data-lucide="activity" class="w-4 h-4"></i>
+                <span class="font-bold text-xs uppercase tracking-widest">Operations Room</span>
             </div>
-            <div id="connection-status" class="flex items-center gap-2 text-xs bg-emerald-950 text-emerald-400 px-3 py-1 rounded-full border border-emerald-800">
-                <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span> DB CONNECTED
+            <div onclick="switchView('map-view')" id="nav-map-view" class="nav-link">
+                <i data-lucide="map" class="w-4 h-4"></i>
+                <span class="font-bold text-xs uppercase tracking-widest">GIS Mapping</span>
+            </div>
+            <div onclick="switchView('audit')" id="nav-audit" class="nav-link">
+                <i data-lucide="history" class="w-4 h-4"></i>
+                <span class="font-bold text-xs uppercase tracking-widest">Audit Ledger</span>
+            </div>
+            <div class="pt-8 text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Sustainable Markets</div>
+            <div class="nav-link-inactive text-amber-500/80"><i data-lucide="zap" class="w-4 h-4"></i><span class="font-bold text-[10px] uppercase">Energy Grid</span></div>
+            <div class="nav-link-inactive text-blue-500/80"><i data-lucide="droplets" class="w-4 h-4"></i><span class="font-bold text-[10px] uppercase">Water Quota</span></div>
+        </nav>
+
+        <div class="p-6 bg-slate-950/50 border-t border-slate-800 space-y-3 shrink-0">
+            <div class="flex items-center justify-between text-[10px] font-bold">
+                <span class="flex items-center gap-2"><img src="https://flagcdn.com/in.svg" class="w-4 rounded-sm"> INDIA</span>
+                <span class="text-emerald-500 font-mono">SECURE</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px] font-bold">
+                <span class="flex items-center gap-2"><img src="https://flagcdn.com/us.svg" class="w-4 rounded-sm"> USA</span>
+                <span class="text-emerald-500 font-mono">SECURE</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+        <header class="h-20 border-b border-slate-800 flex items-center justify-between px-10 bg-slate-900/30 backdrop-blur-sm z-10 shrink-0">
+            <div class="flex flex-col">
+                <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Database Node: 882-Alpha</span>
+                <span class="text-xs font-bold text-emerald-400 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span> SERIALIZABLE MODE
+                </span>
+            </div>
+            <div class="flex gap-4">
+                <button onclick="tradeEnergy()" class="px-5 py-2 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-600/30 rounded font-black text-[9px] uppercase tracking-widest transition-all">Energy Trade</button>
+                <button onclick="tradeWater()" class="px-5 py-2 bg-blue-600/10 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-600/30 rounded font-black text-[9px] uppercase tracking-widest transition-all">Water Trade</button>
             </div>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
-                <div class="flex items-center gap-3 mb-4">
-                    <i data-lucide="zap" class="text-amber-400"></i>
-                    <h2 class="text-lg font-semibold text-white">Microgrid Energy Trade</h2>
+        <div class="flex-1 overflow-y-auto p-10 relative z-10 custom-scrollbar">
+            
+            <div id="view-ops" class="view-section active space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-slate-900/80 p-6 rounded-xl border border-slate-800">
+                        <p class="text-[9px] font-black text-slate-500 uppercase mb-2">Total Parcels</p>
+                        <p class="text-3xl font-mono font-black text-white">14,292</p>
+                    </div>
+                    <div class="bg-slate-900/80 p-6 rounded-xl border border-slate-800">
+                        <p class="text-[9px] font-black text-slate-500 uppercase mb-2">Managed Area</p>
+                        <p class="text-3xl font-mono font-black text-white">1.2M <span class="text-xs text-slate-500">SQM</span></p>
+                    </div>
+                    <div class="bg-slate-900/80 p-6 rounded-xl border border-slate-800">
+                        <p class="text-[9px] font-black text-slate-500 uppercase mb-2">System Health</p>
+                        <p class="text-3xl font-mono font-black text-emerald-500">100%</p>
+                    </div>
                 </div>
-                <p class="text-sm text-slate-400 mb-6">Executes PostGIS ST_DWithin verification for adjacent parcels.</p>
-                <button onclick="tradeEnergy()" id="energy-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded font-medium transition-all">Execute Spatial Trade</button>
+
+                <div class="flex flex-col bg-black/90 rounded-xl border border-slate-800 min-h-[400px]">
+                    <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Live DBMS Output</div>
+                    <div id="terminal" class="flex-1 p-6 font-mono text-[11px] space-y-1 text-slate-500">
+                        <div class="text-emerald-400">>> INITIALIZING GDLR CORE... SUCCESS</div>
+                    </div>
+                </div>
             </div>
 
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
-                <div class="flex items-center gap-3 mb-4">
-                    <i data-lucide="droplet" class="text-blue-400"></i>
-                    <h2 class="text-lg font-semibold text-white">Water Cap-and-Trade</h2>
-                </div>
-                <p class="text-sm text-slate-400 mb-6">Tests Serializable isolation level for high-concurrency quotas.</p>
-                <button onclick="tradeWater()" id="water-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-medium transition-all">Execute Quota Transfer</button>
+            <div id="view-map-view" class="view-section h-[600px] w-full">
+                <div id="map" class="h-full w-full rounded-2xl border border-slate-800 bg-slate-900"></div>
             </div>
-        </div>
 
-        <div class="mt-8">
-            <h3 class="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
-                <i data-lucide="terminal" class="w-4 h-4"></i> System Output
-            </h3>
-            <div id="terminal" class="bg-black border border-slate-800 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm">
-                <div class="text-slate-500">> System initialized. Ready for ACID operations...</div>
+            <div id="view-audit" class="view-section space-y-6">
+                <div class="bg-slate-900/50 p-8 rounded-2xl border border-slate-800">
+                    <h2 class="text-xs font-black uppercase tracking-[0.4em] text-slate-500 mb-8 border-b border-slate-800 pb-4">Immutable Audit Ledger (3NF)</h2>
+                    <table class="w-full text-left text-[11px]">
+                        <thead class="text-slate-600 border-b border-slate-800">
+                            <tr>
+                                <th class="pb-4">TIMESTAMP</th>
+                                <th class="pb-4">RESOURCE_ID</th>
+                                <th class="pb-4">ACTION</th>
+                                <th class="pb-4">STATUS</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-400">
+                            <tr class="border-b border-slate-900/50">
+                                <td class="py-5 font-mono">2026-04-18 16:10:44</td>
+                                <td>381CB-ALPHA</td>
+                                <td class="text-amber-500 font-bold">SPATIAL_ENERGY_TX</td>
+                                <td class="text-emerald-500 font-black">COMMITTED</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-    </div>
+    </main>
+
     <script src="app.js"></script>
     <script>lucide.createIcons();</script>
 </body>
