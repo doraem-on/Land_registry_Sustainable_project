@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GDLR | National Registry Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-950 text-slate-300 min-h-screen p-6">
+    <div class="max-w-5xl mx-auto">
+        <header class="flex justify-between items-center border-b border-slate-800 pb-6 mb-8">
+            <div>
+                <h1 class="text-2xl font-bold text-emerald-400 flex items-center gap-2">
+                    <i data-lucide="shield-check"></i> GDLR Core Engine
+                </h1>
+                <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">National Digital Land Registry v1.0</p>
+            </div>
+            <div id="connection-status" class="flex items-center gap-2 text-xs bg-emerald-950 text-emerald-400 px-3 py-1 rounded-full border border-emerald-800">
+                <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span> DB CONNECTED
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <div class="flex items-center gap-3 mb-4">
+                    <i data-lucide="zap" class="text-amber-400"></i>
+                    <h2 class="text-lg font-semibold text-white">Microgrid Energy Trade</h2>
+                </div>
+                <p class="text-sm text-slate-400 mb-6">Executes PostGIS ST_DWithin verification for adjacent parcels.</p>
+                <button onclick="tradeEnergy()" id="energy-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded font-medium transition-all">Execute Spatial Trade</button>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <div class="flex items-center gap-3 mb-4">
+                    <i data-lucide="droplet" class="text-blue-400"></i>
+                    <h2 class="text-lg font-semibold text-white">Water Cap-and-Trade</h2>
+                </div>
+                <p class="text-sm text-slate-400 mb-6">Tests Serializable isolation level for high-concurrency quotas.</p>
+                <button onclick="tradeWater()" id="water-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-medium transition-all">Execute Quota Transfer</button>
+            </div>
+        </div>
+
+        <div class="mt-8">
+            <h3 class="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
+                <i data-lucide="terminal" class="w-4 h-4"></i> System Output
+            </h3>
+            <div id="terminal" class="bg-black border border-slate-800 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm">
+                <div class="text-slate-500">> System initialized. Ready for ACID operations...</div>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

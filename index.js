@@ -12,11 +12,14 @@ app.use(cors());
 // const landRoutes = require('./routes/landRoutes');
 const greenRoutes = require('./routes/greenRoutes');
 const txRoutes = require('./routes/txRoutes');
+const waterRoutes = require('./routes/waterRoutes');
 
 // Mount Routes (We will uncomment the others as we build them)
 // app.use('/api/land', landRoutes);
 app.use('/api/green', greenRoutes);
 app.use('/api/tx', txRoutes);
+app.use('/api/water', waterRoutes);
+app.use(express.static('public'));
 
 // Health Check
 app.get('/', (req, res) => {
