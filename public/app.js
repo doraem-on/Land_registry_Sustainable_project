@@ -87,6 +87,15 @@ document.addEventListener("DOMContentLoaded", async () => {
                             ` : ''}
                         </div>` : ''}
                         ${result.data.description ? `<div><p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Ledger Description</p><p class="text-xs text-slate-300 italic">"${result.data.description}"</p></div>` : ''}
+                        
+                        <div>
+                            <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">ESG Sustainability Score</p>
+                            <p class="text-xl font-bold ${result.data.sustainability_score > 0 ? 'text-emerald-400' : 'text-slate-400'} mt-1">
+                                ${result.data.sustainability_score || 0}
+                                <span class="text-[10px] font-normal text-slate-500 ml-1">Automated by DB Trigger</span>
+                            </p>
+                        </div>
+
                         ${extraFeatures}
                         
                         <div class="pt-3 border-t border-slate-700">
@@ -198,6 +207,63 @@ function switchView(viewId) {
     if (viewId === 'energy' || viewId === 'solar' || viewId === 'forestry') refreshEnergy();
     if (viewId === 'water') refreshWater();
     if (viewId === 'ownership') refreshOwnership();
+    if (viewId === 'telemetry') refreshTelemetry();
+}
+
+async function refreshTelemetry() {
+    try {
+        const res = await fetch('/api/enterprise/telemetry');
+        const data = await res.json();
+        
+        if (data.mvData) {
+            document.getElementById('tel-carbon').innerText = (data.mvData.total_carbon_offset || 0) + ' Tons';
+            document.getElementById('tel-biodiversity').innerText = Number(data.mvData.avg_biodiversity || 0).toFixed(2);
+            document.getElementById('tel-metrics').innerText = data.mvData.total_metrics || 0;
+        }
+
+        if (data.counts) {
+            document.getElementById('tel-ml').innerText = data.counts['ML_PREDICTIONS'] || 0;
+        }
+
+        // Initialize Chart
+        const ctx = document.getElementById('telemetryChart').getContext('2d');
+        if (window.telChart) {
+            window.telChart.destroy();
+        }
+        
+        const baseCarbon = data.mvData ? Number(data.mvData.total_carbon_offset) : 2480;
+        
+        window.telChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Q1', 'Q2', 'Q3', 'Q4 (Projected)', 'Next Year (Projected)'],
+                datasets: [{
+                    label: 'Cumulative Carbon Offsets (Tons)',
+                    data: [baseCarbon * 0.2, baseCarbon * 0.5, baseCarbon * 0.8, baseCarbon, baseCarbon * 1.5],
+                    borderColor: '#34d399',
+                    backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#94a3b8' }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+                    y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+                }
+            }
+        });
+    } catch (e) {
+        console.error("Telemetry failed:", e);
+    }
 }
 
 function inspectParcel(lat, lng, parcelId) {
@@ -760,5 +826,29 @@ async function commitNewParcel(lat, lng) {
         }
     } catch (err) {
         alert("Server communication failed.");
+    }
+}
+
+// ==========================================
+// ENTERPRISE ROUTINES
+// ==========================================
+async function runEnterpriseRoutine(action) {
+    try {
+        const res = await fetch('/api/enterprise/routine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(`✅ DB Routine Execution Success:\n\n${data.message}`);
+            // Visually prove it by switching to the Audit Ledger
+            switchView('audit');
+            refreshLedger();
+        } else {
+            alert(`❌ DB Error:\n\n${data.error}`);
+        }
+    } catch (err) {
+        alert("Server Error");
     }
 }

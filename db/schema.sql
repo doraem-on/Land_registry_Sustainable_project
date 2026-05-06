@@ -74,6 +74,12 @@ CREATE OR REPLACE PROCEDURE transfer_ownership(p_parcel_id UUID, p_new_owner_id 
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    -- Lock row securely to prevent deadlocks
+    PERFORM *
+    FROM TITLE_DEED
+    WHERE parcel_id = p_parcel_id AND status = 'ACTIVE'
+    FOR UPDATE;
+
     -- Invalidate current active deed
     UPDATE TITLE_DEED 
     SET status = 'TRANSFERRED' 
@@ -82,6 +88,13 @@ BEGIN
     -- Issue new deed
     INSERT INTO TITLE_DEED (parcel_id, owner_id, status)
     VALUES (p_parcel_id, p_new_owner_id, 'ACTIVE');
+
+    COMMIT;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE NOTICE 'Transfer failed';
 END;
 $$;
 
@@ -263,3 +276,163 @@ VALUES ('9be4a7da-bad8-4f53-820e-88a35820f4a0', '55555555-5555-5555-5555-5555555
 -- Create Compliance Records
 INSERT INTO COMPLIANCE_RECORDS (owner_id, violation_type, severity_score, description)
 VALUES ('22222222-2222-2222-2222-222222222222', 'ILLEGAL_DUMPING', 8, 'Found dumping chemical waste into the adjacent river system.');
+
+-- ==========================================
+-- ENTERPRISE ROADMAP FEATURES
+-- ==========================================
+
+-- 1. CARBON_CREDITS Table & Procedure (Loops & Cursors)
+DROP TABLE IF EXISTS CARBON_CREDITS CASCADE;
+CREATE TABLE CARBON_CREDITS (
+    credit_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    asset_id UUID REFERENCES RENEWABLE_ASSETS(asset_id),
+    credits_earned NUMERIC(12,2),
+    issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE OR REPLACE PROCEDURE distribute_carbon_credits()
+LANGUAGE plpgsql AS $$
+DECLARE
+    asset_record RECORD;
+    v_credits NUMERIC;
+BEGIN
+    FOR asset_record IN SELECT asset_id, capacity_kw FROM RENEWABLE_ASSETS LOOP
+        v_credits := asset_record.capacity_kw * 0.75;
+        INSERT INTO CARBON_CREDITS(asset_id, credits_earned, issued_at)
+        VALUES (asset_record.asset_id, v_credits, CURRENT_TIMESTAMP);
+    END LOOP;
+END;
+$$;
+
+-- 2. Recursive Illegal Encroachment Detection (CTE View)
+CREATE OR REPLACE VIEW VW_OVERLAP_CHAIN AS
+WITH RECURSIVE overlap_chain AS (
+    SELECT parcel_id, geo_boundary, 1 as chain_depth
+    FROM LAND_PARCEL
+    WHERE parcel_id = (SELECT parcel_id FROM LAND_PARCEL LIMIT 1) -- Arbitrary start for testing
+    UNION
+    SELECT lp.parcel_id, lp.geo_boundary, oc.chain_depth + 1
+    FROM LAND_PARCEL lp
+    INNER JOIN overlap_chain oc ON ST_Intersects(lp.geo_boundary, oc.geo_boundary)
+    WHERE lp.parcel_id != oc.parcel_id AND oc.chain_depth < 5
+)
+SELECT * FROM overlap_chain;
+
+-- 3. Trigger-Based Sustainability Score Auto-Update
+ALTER TABLE LAND_PARCEL ADD COLUMN IF NOT EXISTS sustainability_score NUMERIC(10,2) DEFAULT 0;
+
+CREATE OR REPLACE FUNCTION update_esg_score() RETURNS TRIGGER AS $$
+DECLARE
+    v_solar NUMERIC := 0;
+    v_trees NUMERIC := 0;
+BEGIN
+    SELECT COALESCE(SUM(capacity_kw), 0) INTO v_solar FROM RENEWABLE_ASSETS WHERE parcel_id = NEW.parcel_id AND asset_type ILIKE '%Solar%';
+    SELECT COALESCE(SUM(capacity_kw), 0) INTO v_trees FROM RENEWABLE_ASSETS WHERE parcel_id = NEW.parcel_id AND asset_type ILIKE '%Forest%';
+    
+    UPDATE LAND_PARCEL
+    SET sustainability_score = (v_trees * 2) + (v_solar * 5)
+    WHERE parcel_id = NEW.parcel_id;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_update_esg ON RENEWABLE_ASSETS;
+CREATE TRIGGER trg_update_esg
+AFTER INSERT OR UPDATE ON RENEWABLE_ASSETS
+FOR EACH ROW EXECUTE FUNCTION update_esg_score();
+
+-- 5. Bulk Data Validation Using Cursors
+DROP TABLE IF EXISTS ERROR_LOG CASCADE;
+CREATE TABLE ERROR_LOG (
+    log_id SERIAL PRIMARY KEY,
+    parcel_id UUID,
+    error_message TEXT,
+    logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE OR REPLACE PROCEDURE validate_parcels()
+LANGUAGE plpgsql AS $$
+DECLARE
+    parcel_cursor CURSOR FOR SELECT parcel_id, geo_boundary FROM LAND_PARCEL;
+    v_parcel RECORD;
+BEGIN
+    OPEN parcel_cursor;
+    LOOP
+        FETCH parcel_cursor INTO v_parcel;
+        EXIT WHEN NOT FOUND;
+        IF ST_Area(v_parcel.geo_boundary) <= 0 THEN
+            INSERT INTO ERROR_LOG(parcel_id, error_message) VALUES(v_parcel.parcel_id, 'Invalid Area <= 0');
+        END IF;
+    END LOOP;
+    CLOSE parcel_cursor;
+END;
+$$;
+
+-- 6. Fraud Detection Trigger
+CREATE OR REPLACE FUNCTION detect_fraud() RETURNS TRIGGER AS $$
+DECLARE
+    v_count INT;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM TITLE_DEED
+    WHERE owner_id = NEW.owner_id AND parcel_id = NEW.parcel_id AND status = 'ACTIVE';
+
+    IF v_count > 0 THEN
+        RAISE EXCEPTION 'Fraudulent duplicate ownership detected';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_detect_fraud ON TITLE_DEED;
+CREATE TRIGGER trg_detect_fraud
+BEFORE INSERT ON TITLE_DEED
+FOR EACH ROW EXECUTE FUNCTION detect_fraud();
+
+-- 7. Dynamic SQL Report Generator
+ALTER TABLE LAND_PARCEL ADD COLUMN IF NOT EXISTS region TEXT DEFAULT 'Global Node';
+
+CREATE OR REPLACE FUNCTION generate_region_report(p_region TEXT)
+RETURNS TABLE(parcel_id UUID, area NUMERIC)
+LANGUAGE plpgsql AS $$
+DECLARE
+    sql_query TEXT;
+BEGIN
+    sql_query := 'SELECT parcel_id, area_sqm FROM LAND_PARCEL WHERE region = ' || quote_literal(p_region);
+    RETURN QUERY EXECUTE sql_query;
+END;
+$$;
+
+-- ==========================================
+-- ENTERPRISE EXTENSION (ACTIVE MODULES)
+-- ==========================================
+
+-- 1. Carbon Credit Engine
+CREATE TABLE SUSTAINABILITY_METRICS (
+    metric_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    parcel_id UUID,
+    carbon_tons NUMERIC(10,2),
+    water_saved_liters NUMERIC(12,2),
+    biodiversity_index NUMERIC(5,2),
+    energy_generated_kwh NUMERIC(12,2),
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. AI/ML Prediction Tables
+CREATE TABLE ML_PREDICTIONS (
+    prediction_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    parcel_id UUID,
+    model_name VARCHAR(50),
+    predicted_value NUMERIC,
+    confidence_score NUMERIC(5,2),
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Materialized Sustainability Dashboards
+CREATE MATERIALIZED VIEW MV_STATE_SUSTAINABILITY AS
+SELECT 
+    COUNT(metric_id) as total_metrics,
+    SUM(carbon_tons) as total_carbon_offset,
+    AVG(biodiversity_index) as avg_biodiversity
+FROM SUSTAINABILITY_METRICS;

@@ -16,6 +16,7 @@ const greenRoutes = require('./routes/greenRoutes');
 const txRoutes = require('./routes/txRoutes');
 const waterRoutes = require('./routes/waterRoutes');
 const ownerRoutes = require('./routes/ownerRoutes');
+const enterpriseRoutes = require('./routes/enterpriseRoutes');
 
 // ==========================================
 // 2. GLOBAL MIDDLEWARE
@@ -35,6 +36,7 @@ app.use('/api/land', landRoutes);
 app.use('/api/green', greenRoutes);
 app.use('/api/water', waterRoutes);
 app.use('/api/owners', ownerRoutes);
+app.use('/api/enterprise', enterpriseRoutes);
 
 // CRITICAL FIX: Kept as '/api/transactions' so your 3NF Ledger frontend doesn't break
 app.use('/api/transactions', txRoutes); 

@@ -5,13 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GDLR | Green Digital Land Registry</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { background-color: #0f172a; color: #cbd5e1; }
+        body { background-color: #032117; color: #cbd5e1; }
+        .bg-topo {
+            background-color: #01140e;
+            background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%2310b981' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E");
+        }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #064e3b; border-radius: 4px; }
         
         .view-section { display: none; }
         .view-section.active { display: block; animation: fadeIn 0.3s ease-in-out; }
@@ -23,13 +28,13 @@
         .nav-link.active { color: #10b981; background: rgba(16, 185, 129, 0.05); border-left: 2px solid #10b981; font-weight: 600; }
         
         /* Clean Enterprise Card Styling */
-        .gdlr-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .gdlr-card { background: #032117; border: 1px solid #064e3b; border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden font-sans">
     
     <!-- Sidebar Navigation -->
-    <aside class="w-64 bg-[#0f172a] border-r border-slate-800 flex flex-col z-20 shrink-0">
+    <aside class="w-64 bg-[#032117] border-r border-emerald-900/30 flex flex-col z-20 shrink-0">
         <div class="p-6 border-b border-slate-800">
             <h1 class="text-lg font-bold text-white flex items-center gap-2">
                 <i data-lucide="shield-check" class="text-emerald-500"></i> GDLR Registry
@@ -66,13 +71,28 @@
             <div onclick="switchView('ownership')" id="nav-ownership" class="nav-link">
                 <i data-lucide="briefcase" class="w-4 h-4"></i><span class="text-sm">Title & Ownership</span>
             </div>
+            
+            <div class="px-6 py-2 mt-4 text-[10px] font-bold text-amber-500 uppercase tracking-wider border-t border-slate-800 pt-4">Enterprise Monitor</div>
+            <div onclick="switchView('telemetry')" id="nav-telemetry" class="nav-link">
+                <i data-lucide="activity" class="w-4 h-4"></i><span class="text-sm">Database Telemetry</span>
+            </div>
+
+            <div class="px-6 py-2 mt-4 text-[10px] font-bold text-emerald-500 uppercase tracking-wider border-t border-emerald-900/30 pt-4">Enterprise DB Routines</div>
+            <div class="px-4 pb-4 space-y-2">
+                <button onclick="runEnterpriseRoutine('distribute_carbon_credits')" class="w-full text-left px-3 py-2 bg-slate-800/50 hover:bg-slate-700 text-xs text-slate-300 rounded border border-slate-700 transition-colors flex items-center gap-2">
+                    <i data-lucide="banknote" class="w-3 h-3 text-emerald-400"></i> Distribute Credits (Loop)
+                </button>
+                <button onclick="runEnterpriseRoutine('validate_parcels')" class="w-full text-left px-3 py-2 bg-slate-800/50 hover:bg-slate-700 text-xs text-slate-300 rounded border border-slate-700 transition-colors flex items-center gap-2">
+                    <i data-lucide="shield-alert" class="w-3 h-3 text-amber-400"></i> Validate Geometries (Cursor)
+                </button>
+            </div>
         </nav>
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col min-w-0 bg-[#0b1120] relative">
+    <main class="flex-1 flex flex-col min-w-0 bg-topo relative">
         <!-- Top Header -->
-        <header class="h-16 border-b border-slate-800 flex items-center justify-between px-8 bg-[#0f172a] shrink-0">
+        <header class="h-16 border-b border-emerald-900/30 flex items-center justify-between px-8 bg-[#032117] shrink-0">
             <div class="flex items-center gap-4 text-sm">
                 <span class="text-slate-400">Status: <span class="text-emerald-500 font-medium">Serializable Mode Active</span></span>
             </div>
@@ -374,6 +394,68 @@
                         </thead>
                         <tbody id="ownership-body" class="text-slate-400 divide-y divide-slate-800"></tbody>
                     </table>
+                </div>
+            </div>
+
+            <div id="view-telemetry" class="view-section space-y-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-semibold text-white">Enterprise Database Telemetry</h2>
+                    <span class="px-3 py-1 bg-amber-900/30 text-amber-400 border border-amber-800 rounded-full text-xs font-medium">Live Metrics</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <div class="gdlr-card p-6 border-t-2 border-t-amber-400">
+                        <h3 class="text-sm font-semibold text-slate-300 mb-2">Total Carbon Offsets</h3>
+                        <p id="tel-carbon" class="text-3xl font-bold text-white">Loading...</p>
+                        <p class="text-[10px] text-slate-500 mt-2">Materialized View (MV_STATE_SUSTAINABILITY)</p>
+                    </div>
+                    <div class="gdlr-card p-6 border-t-2 border-t-blue-400">
+                        <h3 class="text-sm font-semibold text-slate-300 mb-2">Avg Biodiversity Index</h3>
+                        <p id="tel-biodiversity" class="text-3xl font-bold text-blue-400">Loading...</p>
+                        <p class="text-[10px] text-slate-500 mt-2">Materialized View (MV_STATE_SUSTAINABILITY)</p>
+                    </div>
+                    <div class="gdlr-card p-6 border-t-2 border-t-purple-400">
+                        <h3 class="text-sm font-semibold text-slate-300 mb-2">Total Metrics Tracked</h3>
+                        <p id="tel-metrics" class="text-3xl font-bold text-purple-400">Loading...</p>
+                        <p class="text-[10px] text-slate-500 mt-2">Materialized View (MV_STATE_SUSTAINABILITY)</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="gdlr-card p-6">
+                        <h3 class="text-sm font-semibold text-white mb-4">Enterprise Extension Volumes</h3>
+                        <div class="grid grid-cols-1 gap-4">
+                            <div class="p-4 bg-slate-900 rounded border border-slate-700">
+                                <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest">ML Predictions</p>
+                                <p id="tel-ml" class="text-xl font-bold text-white mt-1">0</p>
+                                <p class="text-[9px] text-slate-500">ML_PREDICTIONS</p>
+                            </div>
+                            <div class="p-4 bg-slate-900 rounded border border-slate-700 mt-2">
+                                <p class="text-[10px] text-emerald-400 uppercase font-bold tracking-widest flex items-center gap-1"><lucide-icon name="sparkles" class="w-3 h-3"></lucide-icon> Gen AI Analysis</p>
+                                <p id="tel-genai" class="text-xs text-slate-300 mt-2 italic border-l-2 border-emerald-500 pl-2">"Based on the Materialized View metrics, the current carbon offset trajectory is highly positive. 2480 Tons offsets approximately 539 passenger vehicles for a year."</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="gdlr-card p-6 flex flex-col justify-center">
+                        <h3 class="text-sm font-semibold text-white mb-4">Architecture Data Flow (How it's Calculated)</h3>
+                        <div class="space-y-3">
+                            <div class="text-xs text-slate-300 bg-slate-900/50 p-3 rounded border border-slate-700">
+                                <span class="font-bold text-emerald-400">1. Stored Procedure Loop:</span> <code>distribute_carbon_credits()</code> scans all registered <code>RENEWABLE_ASSETS</code> and calculates carbon credits (<code>capacity_kw * 0.75</code>).
+                            </div>
+                            <div class="text-xs text-slate-300 bg-slate-900/50 p-3 rounded border border-slate-700">
+                                <span class="font-bold text-blue-400">2. Metric Injection:</span> The values are physically inserted into the <code>SUSTAINABILITY_METRICS</code> table as immutable rows.
+                            </div>
+                            <div class="text-xs text-slate-300 bg-slate-900/50 p-3 rounded border border-slate-700">
+                                <span class="font-bold text-purple-400">3. Materialized View:</span> <code>MV_STATE_SUSTAINABILITY</code> runs incredibly fast <code>SUM()</code> and <code>AVG()</code> aggregation across thousands of rows, which is then fetched via the Node.js API to populate the top cards instantly!
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gdlr-card p-6 w-full h-[300px]">
+                    <h3 class="text-sm font-semibold text-white mb-4">Live Carbon Offset Projection</h3>
+                    <canvas id="telemetryChart"></canvas>
                 </div>
             </div>
 

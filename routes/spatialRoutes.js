@@ -16,6 +16,7 @@ router.post('/identify', async (req, res) => {
             SELECT 
                 p.parcel_id, 
                 p.area_sqm,
+                p.sustainability_score,
                 r.asset_type,
                 r.capacity_kw,
                 r.carbon_credits_available,
@@ -31,7 +32,7 @@ router.post('/identify', async (req, res) => {
             LEFT JOIN LAND_OWNERS o ON td.owner_id = o.owner_id
             LEFT JOIN COMPLIANCE_RECORDS cr ON o.owner_id = cr.owner_id
             WHERE ST_Contains(p.geo_boundary, ST_SetSRID(ST_Point($1, $2), 4326))
-            GROUP BY p.parcel_id, r.asset_type, r.capacity_kw, r.carbon_credits_available, w.gallons_remaining, r.description, w.description, o.owner_name, o.entity_type;
+            GROUP BY p.parcel_id, p.area_sqm, p.sustainability_score, r.asset_type, r.capacity_kw, r.carbon_credits_available, w.gallons_remaining, r.description, w.description, o.owner_name, o.entity_type;
         `;
         const result = await pool.query(query, [lng, lat]);
         
