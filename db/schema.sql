@@ -1,14 +1,19 @@
--- ==========================================
--- GDLR: GLOBAL DIGITAL LAND REGISTRY SCHEMA
--- Architecture: 3NF Normalized with Spatial Extensions
--- ==========================================
+-- Drop existing tables/views if any to allow fresh seed
+DROP MATERIALIZED VIEW IF EXISTS MV_SUSTAINABILITY_METRICS;
+DROP TABLE IF EXISTS AUDIT_LOG CASCADE;
+DROP TABLE IF EXISTS TITLE_DEED CASCADE;
+DROP TABLE IF EXISTS LAND_OWNERS CASCADE;
+DROP TABLE IF EXISTS COMPLIANCE_RECORDS CASCADE;
+DROP TABLE IF EXISTS RENEWABLE_ASSETS CASCADE;
+DROP TABLE IF EXISTS WATER_QUOTA CASCADE;
+DROP TABLE IF EXISTS LAND_PARCEL CASCADE;
 
 -- 1. Enable Professional Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 2. Land Parcel Table (1NF/2NF/3NF)
--- Stores physical geometry using PostGIS
+-- 2. Land Parcel Table
 CREATE TABLE LAND_PARCEL (
     parcel_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     geo_boundary GEOMETRY(Polygon, 4326) NOT NULL,
@@ -16,40 +21,198 @@ CREATE TABLE LAND_PARCEL (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Water Quota Table (Resource Normalization)
--- Enforces a check constraint to prevent over-extraction (Business Logic at DB level)
+-- Spatial Index
+CREATE INDEX idx_parcel_geometry ON LAND_PARCEL USING GIST (geo_boundary);
+
+-- Prevent Overlap Trigger
+CREATE OR REPLACE FUNCTION prevent_parcel_overlap()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM LAND_PARCEL 
+        WHERE parcel_id != NEW.parcel_id 
+        AND ST_Intersects(geo_boundary, NEW.geo_boundary)
+        AND NOT ST_Touches(geo_boundary, NEW.geo_boundary)
+    ) THEN
+        RAISE EXCEPTION 'Spatial Integrity Violation: Parcel overlaps with an existing registered parcel.';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_prevent_overlap
+BEFORE INSERT OR UPDATE ON LAND_PARCEL
+FOR EACH ROW EXECUTE FUNCTION prevent_parcel_overlap();
+
+-- 3. Ownership System (New DB Heavy Architecture)
+CREATE TABLE LAND_OWNERS (
+    owner_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_name VARCHAR(255) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL, -- 'Government', 'Corporate', 'Private'
+    contact_info VARCHAR(255)
+);
+
+CREATE TABLE TITLE_DEED (
+    deed_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    parcel_id UUID REFERENCES LAND_PARCEL(parcel_id) NOT NULL,
+    owner_id UUID REFERENCES LAND_OWNERS(owner_id) NOT NULL,
+    issue_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'ACTIVE' -- 'ACTIVE' or 'TRANSFERRED'
+);
+
+CREATE TABLE COMPLIANCE_RECORDS (
+    record_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_id UUID REFERENCES LAND_OWNERS(owner_id) NOT NULL,
+    violation_type VARCHAR(100) NOT NULL,
+    severity_score INT CHECK (severity_score >= 1 AND severity_score <= 10),
+    incident_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    description TEXT
+);
+
+-- Stored Procedure to Transfer Ownership (ACID Compliant)
+CREATE OR REPLACE PROCEDURE transfer_ownership(p_parcel_id UUID, p_new_owner_id UUID)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Invalidate current active deed
+    UPDATE TITLE_DEED 
+    SET status = 'TRANSFERRED' 
+    WHERE parcel_id = p_parcel_id AND status = 'ACTIVE';
+
+    -- Issue new deed
+    INSERT INTO TITLE_DEED (parcel_id, owner_id, status)
+    VALUES (p_parcel_id, p_new_owner_id, 'ACTIVE');
+END;
+$$;
+
+
+-- 4. Water Quota Table
 CREATE TABLE WATER_QUOTA (
     quota_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     parcel_id UUID REFERENCES LAND_PARCEL(parcel_id) UNIQUE,
+    deed_id UUID REFERENCES TITLE_DEED(deed_id),
     season_year INT NOT NULL,
     gallons_remaining NUMERIC(12,2) CHECK (gallons_remaining >= 0),
+    description TEXT,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Renewable Energy Assets (Sustainable Layer)
+-- 5. Renewable Energy Assets
 CREATE TABLE RENEWABLE_ASSETS (
     asset_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     parcel_id UUID REFERENCES LAND_PARCEL(parcel_id),
-    asset_type VARCHAR(50), -- 'SOLAR' or 'WIND'
-    carbon_credits_available NUMERIC(12,2) DEFAULT 0.00
+    deed_id UUID REFERENCES TITLE_DEED(deed_id),
+    asset_type VARCHAR(50), 
+    capacity_kw NUMERIC(12,2) DEFAULT 0.00,
+    carbon_credits_available NUMERIC(12,2) DEFAULT 0.00,
+    description TEXT
 );
 
--- 5. Audit Log Table (Immutable Ledger)
--- Essential for Government-grade registries to prevent fraud
+-- 6. Audit Log Table
 CREATE TABLE AUDIT_LOG (
     log_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    parcel_id UUID REFERENCES LAND_PARCEL(parcel_id),
-    action_type VARCHAR(100),
+    table_name VARCHAR(50),
+    record_id UUID,
+    deed_id UUID,
+    action_type VARCHAR(10),
     old_value JSONB,
     new_value JSONB,
-    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    hash VARCHAR(64),
+    previous_hash VARCHAR(64)
 );
 
--- ==========================================
--- SEED DATA (Initial Test Environment)
--- ==========================================
+-- Automated Audit Trigger
+CREATE OR REPLACE FUNCTION log_transaction()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_old_data JSONB;
+    v_new_data JSONB;
+    v_prev_hash VARCHAR(64);
+    v_new_hash VARCHAR(64);
+    v_record_id UUID;
+BEGIN
+    IF (TG_OP = 'UPDATE') THEN
+        v_old_data := row_to_json(OLD)::JSONB;
+        v_new_data := row_to_json(NEW)::JSONB;
+        BEGIN
+            v_record_id := NEW.parcel_id;
+        EXCEPTION WHEN OTHERS THEN
+            v_record_id := NULL;
+        END;
+    ELSIF (TG_OP = 'DELETE') THEN
+        v_old_data := row_to_json(OLD)::JSONB;
+        BEGIN
+            v_record_id := OLD.parcel_id;
+        EXCEPTION WHEN OTHERS THEN
+            v_record_id := NULL;
+        END;
+    ELSIF (TG_OP = 'INSERT') THEN
+        v_new_data := row_to_json(NEW)::JSONB;
+        BEGIN
+            v_record_id := NEW.parcel_id;
+        EXCEPTION WHEN OTHERS THEN
+            v_record_id := NULL;
+        END;
+    END IF;
 
--- Insert Solar Hub A (Square Polygon)
+    -- For TITLE_DEED, we might want to log deed_id
+    IF TG_TABLE_NAME = 'title_deed' THEN
+        IF TG_OP = 'INSERT' THEN v_record_id := NEW.deed_id; END IF;
+        IF TG_OP = 'UPDATE' THEN v_record_id := NEW.deed_id; END IF;
+    END IF;
+
+    -- Get previous hash
+    SELECT hash INTO v_prev_hash FROM AUDIT_LOG ORDER BY changed_at DESC LIMIT 1;
+    IF v_prev_hash IS NULL THEN
+        v_prev_hash := encode(digest('GENESIS', 'sha256'), 'hex');
+    END IF;
+
+    -- Calculate new hash
+    v_new_hash := encode(digest(
+        COALESCE(v_prev_hash, '') || 
+        TG_TABLE_NAME || 
+        TG_OP || 
+        COALESCE(v_old_data::TEXT, '') || 
+        COALESCE(v_new_data::TEXT, '') || 
+        CURRENT_TIMESTAMP::TEXT, 
+        'sha256'
+    ), 'hex');
+
+    INSERT INTO AUDIT_LOG (table_name, record_id, action_type, old_value, new_value, hash, previous_hash)
+    VALUES (TG_TABLE_NAME, v_record_id, TG_OP, v_old_data, v_new_data, v_new_hash, v_prev_hash);
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER audit_land_parcel AFTER INSERT OR UPDATE OR DELETE ON LAND_PARCEL FOR EACH ROW EXECUTE FUNCTION log_transaction();
+CREATE TRIGGER audit_water_quota AFTER INSERT OR UPDATE OR DELETE ON WATER_QUOTA FOR EACH ROW EXECUTE FUNCTION log_transaction();
+CREATE TRIGGER audit_renewable_assets AFTER INSERT OR UPDATE OR DELETE ON RENEWABLE_ASSETS FOR EACH ROW EXECUTE FUNCTION log_transaction();
+CREATE TRIGGER audit_title_deed AFTER INSERT OR UPDATE OR DELETE ON TITLE_DEED FOR EACH ROW EXECUTE FUNCTION log_transaction();
+CREATE TRIGGER audit_compliance_records AFTER INSERT OR UPDATE OR DELETE ON COMPLIANCE_RECORDS FOR EACH ROW EXECUTE FUNCTION log_transaction();
+
+-- 7. Materialized View for Dashboard Metrics
+CREATE MATERIALIZED VIEW MV_SUSTAINABILITY_METRICS AS
+SELECT 
+    COUNT(p.parcel_id) as total_parcels,
+    SUM(p.area_sqm) as total_registered_area_sqm,
+    SUM(w.gallons_remaining) as total_water_reserves,
+    SUM(r.capacity_kw) as total_renewable_capacity_kw,
+    SUM(r.carbon_credits_available) as total_carbon_credits
+FROM LAND_PARCEL p
+LEFT JOIN WATER_QUOTA w ON p.parcel_id = w.parcel_id
+LEFT JOIN RENEWABLE_ASSETS r ON p.parcel_id = r.parcel_id;
+
+-- Seed Data
+
+-- Create Owners
+INSERT INTO LAND_OWNERS (owner_id, owner_name, entity_type, contact_info) VALUES 
+('11111111-1111-1111-1111-111111111111', 'State Government', 'Government', 'gov@state.gov'),
+('22222222-2222-2222-2222-222222222222', 'GreenTech Corp', 'Corporate', 'contact@greentech.io'),
+('33333333-3333-3333-3333-333333333333', 'Private Citizen A', 'Private', 'citizen.a@email.com');
+
+-- Create Parcels
 INSERT INTO LAND_PARCEL (parcel_id, geo_boundary, area_sqm)
 VALUES (
     '381cb099-0ba9-43ca-acda-a2e1b5828790', 
@@ -57,7 +220,6 @@ VALUES (
     100.00
 );
 
--- Insert Residential Parcel B (Adjacent to Solar Hub)
 INSERT INTO LAND_PARCEL (parcel_id, geo_boundary, area_sqm)
 VALUES (
     '9be4a7da-bad8-4f53-820e-88a35820f4a0', 
@@ -65,9 +227,24 @@ VALUES (
     100.00
 );
 
--- Seed Water Quotas for 2026
-INSERT INTO WATER_QUOTA (parcel_id, season_year, gallons_remaining)
-VALUES ('381cb099-0ba9-43ca-acda-a2e1b5828790', 2026, 50000.00);
+-- Create Deeds
+INSERT INTO TITLE_DEED (deed_id, parcel_id, owner_id, status) VALUES 
+('44444444-4444-4444-4444-444444444444', '381cb099-0ba9-43ca-acda-a2e1b5828790', '11111111-1111-1111-1111-111111111111', 'ACTIVE'),
+('55555555-5555-5555-5555-555555555555', '9be4a7da-bad8-4f53-820e-88a35820f4a0', '33333333-3333-3333-3333-333333333333', 'ACTIVE');
 
-INSERT INTO WATER_QUOTA (parcel_id, season_year, gallons_remaining)
-VALUES ('9be4a7da-bad8-4f53-820e-88a35820f4a0', 2026, 10000.00);
+-- Create Assets
+INSERT INTO WATER_QUOTA (parcel_id, deed_id, season_year, gallons_remaining, description)
+VALUES ('381cb099-0ba9-43ca-acda-a2e1b5828790', '44444444-4444-4444-4444-444444444444', 2026, 50000.00, 'Critical water reservoir for local district. High conservation priority.');
+
+INSERT INTO WATER_QUOTA (parcel_id, deed_id, season_year, gallons_remaining, description)
+VALUES ('9be4a7da-bad8-4f53-820e-88a35820f4a0', '55555555-5555-5555-5555-555555555555', 2026, 10000.00, 'Residential rainwater harvesting quota limit.');
+
+INSERT INTO RENEWABLE_ASSETS (parcel_id, deed_id, asset_type, capacity_kw, carbon_credits_available, description)
+VALUES ('381cb099-0ba9-43ca-acda-a2e1b5828790', '44444444-4444-4444-4444-444444444444', 'Solar', 500.00, 100.00, 'High potential for solar hub due to minimal shading.');
+
+INSERT INTO RENEWABLE_ASSETS (parcel_id, deed_id, asset_type, capacity_kw, carbon_credits_available, description)
+VALUES ('9be4a7da-bad8-4f53-820e-88a35820f4a0', '55555555-5555-5555-5555-555555555555', 'Wind', 200.00, 50.00, 'Secondary wind mill installation on residential border.');
+
+-- Create Compliance Records
+INSERT INTO COMPLIANCE_RECORDS (owner_id, violation_type, severity_score, description)
+VALUES ('22222222-2222-2222-2222-222222222222', 'ILLEGAL_DUMPING', 8, 'Found dumping chemical waste into the adjacent river system.');

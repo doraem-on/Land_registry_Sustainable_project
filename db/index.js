@@ -1,15 +1,21 @@
 const { Pool } = require('pg');
-require('dotenv').config();
 
+// Hardcoding the connection to force it into the right database
 const pool = new Pool({
-  user: process.env.DB_USER || 'lalit', // Using your Mac username from the terminal logs
+  user: 'lalit',
   host: 'localhost',
-  database: 'gdlr',
-  password: process.env.DB_PASSWORD || '',
+  database: 'gdlr_engine',
+  password: '', // Leave empty if you don't have one
   port: 5432,
 });
 
-module.exports = {
-  query: (text, params) => pool.query(text, params),
-  getClient: () => pool.connect() 
-};
+// This will tell us exactly where we are landed
+pool.query('SELECT current_database(), current_user', (err, res) => {
+    if (err) {
+        console.error("CONNECTION ERROR:", err.message);
+    } else {
+        console.log(`>> ACTUAL DB: ${res.rows[0].current_database} | USER: ${res.rows[0].current_user}`);
+    }
+});
+
+module.exports = pool;
