@@ -195,7 +195,7 @@ function switchView(viewId) {
     }
     
     // Refresh specific tables based on view
-    if (viewId === 'energy' || viewId === 'solar') refreshEnergy();
+    if (viewId === 'energy' || viewId === 'solar' || viewId === 'forestry') refreshEnergy();
     if (viewId === 'water') refreshWater();
     if (viewId === 'ownership') refreshOwnership();
 }
@@ -325,23 +325,28 @@ async function executeDynamicTrade() {
 // OWNERSHIP TRANSFER LOGIC
 // ==========================================
 function openTransferModal(parcelId) {
-    document.getElementById('transfer-parcel').value = parcelId;
+    const parcelSelect = document.getElementById('transfer-parcel');
+    parcelSelect.innerHTML = '<option value="">Select a Parcel to Transfer...</option>';
     
-    const select = document.getElementById('transfer-new-owner');
-    select.innerHTML = '<option value="">Select an owner...</option>';
-    allOwners.forEach(o => {
-        select.innerHTML += `<option value="${o.owner_id}">${o.owner_name} (${o.entity_type})</option>`;
+    globalOwnership.forEach(o => {
+        const selected = (o.parcel_id === parcelId) ? 'selected' : '';
+        parcelSelect.innerHTML += `<option value="${o.parcel_id}" ${selected}>ID: ${o.parcel_id} (Owner: ${o.owner_name})</option>`;
     });
 
+    document.getElementById('transfer-owner-name').value = '';
+    document.getElementById('transfer-contact').value = '';
+    
     document.getElementById('transfer-modal').classList.remove('hidden');
 }
 
 async function executeTransfer() {
     const parcel_id = document.getElementById('transfer-parcel').value;
-    const new_owner_id = document.getElementById('transfer-new-owner').value;
+    const new_owner_name = document.getElementById('transfer-owner-name').value;
+    const entity_type = document.getElementById('transfer-entity-type').value;
+    const contact_info = document.getElementById('transfer-contact').value;
     
-    if (!new_owner_id) {
-        alert("Please select a new owner.");
+    if (!parcel_id || !new_owner_name || !contact_info) {
+        alert("Please select a parcel and provide new owner details.");
         return;
     }
 
@@ -349,7 +354,7 @@ async function executeTransfer() {
         const res = await fetch('/api/owners/transfer', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ parcel_id, new_owner_id })
+            body: JSON.stringify({ parcel_id, new_owner_name, entity_type, contact_info })
         });
         const data = await res.json();
         if (res.ok) {
@@ -388,7 +393,7 @@ async function refreshOverview() {
 // SEARCH & SORT SETUP
 // ==========================================
 function setupSearchSortListeners() {
-    ['audit', 'energy', 'solar', 'water', 'ownership'].forEach(type => {
+    ['audit', 'energy', 'solar', 'water', 'ownership', 'forestry'].forEach(type => {
         const search = document.getElementById(`search-${type}`);
         const sort = document.getElementById(`sort-${type}`);
         if(search) search.addEventListener('input', () => renderTable(type));
@@ -398,7 +403,7 @@ function setupSearchSortListeners() {
 
 function renderTable(type) {
     if (type === 'audit') renderLedger();
-    else if (type === 'energy' || type === 'solar') renderEnergy();
+    else if (type === 'energy' || type === 'solar' || type === 'forestry') renderEnergy();
     else if (type === 'water') renderWater();
     else if (type === 'ownership') renderOwnership();
 }
@@ -435,15 +440,37 @@ function renderLedger() {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-slate-800/50 transition-colors";
         const actionColor = tx.action.includes('ENERGY') ? 'text-amber-500' : tx.action.includes('DEED') ? 'text-purple-400' : 'text-blue-500';
+        
+        let changesHTML = `<span class="text-[10px] text-slate-500 italic">No value changes</span>`;
+        if (tx.old_value || tx.new_value) {
+            changesHTML = `<div class="text-[9px] font-mono text-slate-400 max-w-[200px]" title='${JSON.stringify(tx.old_value)} -> ${JSON.stringify(tx.new_value)}'>`;
+            if (tx.old_value && tx.new_value) {
+                const changes = [];
+                for(let k in tx.new_value) {
+                    if (JSON.stringify(tx.new_value[k]) !== JSON.stringify(tx.old_value[k])) {
+                        changes.push(`<span class="text-slate-300">${k}:</span> ${tx.old_value[k]} &rarr; <span class="text-white font-bold">${tx.new_value[k]}</span>`);
+                    }
+                }
+                changesHTML += changes.join('<br>') || 'Unchanged properties update';
+            } else if (tx.new_value) {
+                changesHTML += `<span class="text-emerald-400">Created Fields: ${Object.keys(tx.new_value).join(', ')}</span>`;
+            } else if (tx.old_value) {
+                changesHTML += `<span class="text-red-400">Deleted Record</span>`;
+            }
+            changesHTML += `</div>`;
+        }
+
         tr.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-300 font-mono">${tx.timestamp}</td>
             <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-xs text-emerald-500 font-bold mb-0.5 uppercase">${tx.table_name || 'System'}</div>
                 <div class="text-sm text-white font-mono">${tx.resource_id}</div>
-                <div class="text-[10px] text-emerald-500 font-mono mt-1" title="Cryptographic Hash">
+                <div class="text-[10px] text-slate-500 font-mono mt-1" title="Cryptographic Hash">
                     <lucide-icon name="lock" class="w-3 h-3 inline pb-0.5"></lucide-icon> ${tx.hash ? tx.hash.substring(0, 16) + '...' : 'N/A'}
                 </div>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold ${actionColor}">${tx.action}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold ${actionColor}">${tx.action_type || tx.action}</td>
+            <td class="px-6 py-4">${changesHTML}</td>
             <td class="px-6 py-4 whitespace-nowrap">
                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-emerald-100/10 text-emerald-400">${tx.status}</span>
             </td>
@@ -540,6 +567,47 @@ function renderEnergy() {
     }
     if (solarNodesCard) {
         solarNodesCard.innerHTML = `${sData.length} <span class="text-lg text-slate-500">Active</span>`;
+    }
+
+    // Forestry
+    const fBody = document.getElementById('forestry-body');
+    if (fBody) {
+        fBody.innerHTML = '';
+        let fData = globalEnergy.filter(d => d.asset_type.toLowerCase().includes('forest'));
+        const fq = document.getElementById('search-forestry').value.toLowerCase();
+        const fs = document.getElementById('sort-forestry').value;
+        if (fq) fData = fData.filter(d => d.asset_id.toLowerCase().includes(fq) || (d.deed_id && d.deed_id.toLowerCase().includes(fq)));
+        if (fs === 'capacity_desc') fData.sort((a,b) => b.capacity_kw - a.capacity_kw);
+
+        fData.forEach(r => {
+            const date = new Date(r.created_at).toLocaleString();
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-800/50 cursor-pointer transition-colors";
+            tr.onclick = () => inspectParcel(r.lat, r.lng, r.parcel_id);
+            tr.innerHTML = `
+                <td class="px-6 py-4 font-mono text-xs text-white">
+                    <div>${r.asset_id.substring(0,8)}...</div>
+                    <div class="text-[9px] text-slate-500 mt-0.5">Deed: ${r.deed_id ? r.deed_id.substring(0,8) + '...' : 'N/A'}</div>
+                </td>
+                <td class="px-6 py-4 text-emerald-400 font-bold">${r.asset_type}</td>
+                <td class="px-6 py-4 text-white">${r.capacity_kw} Trees</td>
+                <td class="px-6 py-4 text-amber-400 font-bold">${r.carbon_credits_available}</td>
+                <td class="px-6 py-4 text-xs font-mono">${date}</td>
+            `;
+            fBody.appendChild(tr);
+        });
+
+        // Update Forestry cards
+        const treeCard = document.getElementById('card-forestry-trees');
+        const carbonCard = document.getElementById('card-forestry-carbon');
+        if (treeCard) {
+            const totalTrees = fData.reduce((sum, r) => sum + (parseFloat(r.capacity_kw) || 0), 0);
+            treeCard.innerHTML = `${totalTrees.toLocaleString()} <span class="text-lg text-slate-500">Trees</span>`;
+        }
+        if (carbonCard) {
+            const totalCarbon = fData.reduce((sum, r) => sum + (parseFloat(r.carbon_credits_available) || 0), 0);
+            carbonCard.innerHTML = `${totalCarbon.toLocaleString()} <span class="text-lg text-slate-500">Credits</span>`;
+        }
     }
 
     refreshOverview();

@@ -15,12 +15,22 @@ router.get('/', async (req, res) => {
 
 // POST to transfer ownership
 router.post('/transfer', async (req, res) => {
-    const { parcel_id, new_owner_id } = req.body;
+    const { parcel_id, new_owner_name, entity_type, contact_info } = req.body;
     try {
+        await pool.query('BEGIN');
+        const resOwner = await pool.query(
+            'INSERT INTO LAND_OWNERS (owner_name, entity_type, contact_info) VALUES ($1, $2, $3) RETURNING owner_id',
+            [new_owner_name, entity_type, contact_info]
+        );
+        const new_owner_id = resOwner.rows[0].owner_id;
+        
         // We use the DB-heavy stored procedure!
         await pool.query('CALL transfer_ownership($1, $2)', [parcel_id, new_owner_id]);
-        res.status(200).json({ message: "Deed transferred successfully. Ledger updated." });
+        await pool.query('COMMIT');
+        
+        res.status(200).json({ message: "Deed transferred to new owner successfully. Ledger updated." });
     } catch (err) {
+        await pool.query('ROLLBACK');
         console.error("Error transferring deed:", err);
         res.status(500).json({ error: "Ownership transfer failed." });
     }

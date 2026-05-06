@@ -108,9 +108,9 @@ CREATE TABLE RENEWABLE_ASSETS (
     description TEXT
 );
 
--- 6. Audit Log Table
+-- 6. Audit Log Table (Enterprise Partitioning)
 CREATE TABLE AUDIT_LOG (
-    log_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    log_id UUID DEFAULT uuid_generate_v4(),
     table_name VARCHAR(50),
     record_id UUID,
     deed_id UUID,
@@ -119,8 +119,23 @@ CREATE TABLE AUDIT_LOG (
     new_value JSONB,
     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     hash VARCHAR(64),
-    previous_hash VARCHAR(64)
-);
+    previous_hash VARCHAR(64),
+    PRIMARY KEY (log_id, changed_at)
+) PARTITION BY RANGE (changed_at);
+
+-- Create Partitions
+CREATE TABLE AUDIT_LOG_Y2026 PARTITION OF AUDIT_LOG FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+CREATE TABLE AUDIT_LOG_Y2027 PARTITION OF AUDIT_LOG FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
+
+-- Window Function View (Analytics)
+CREATE OR REPLACE VIEW VW_ENERGY_RANKINGS AS
+SELECT 
+    asset_id,
+    asset_type,
+    capacity_kw,
+    RANK() OVER (PARTITION BY asset_type ORDER BY capacity_kw DESC) as regional_rank,
+    AVG(capacity_kw) OVER () as global_avg_capacity
+FROM RENEWABLE_ASSETS;
 
 -- Automated Audit Trigger
 CREATE OR REPLACE FUNCTION log_transaction()

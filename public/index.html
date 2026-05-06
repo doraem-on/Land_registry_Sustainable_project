@@ -59,6 +59,9 @@
             <div onclick="switchView('water')" id="nav-water" class="nav-link">
                 <i data-lucide="droplets" class="w-4 h-4"></i><span class="text-sm">Water Quota</span>
             </div>
+            <div onclick="switchView('forestry')" id="nav-forestry" class="nav-link">
+                <i data-lucide="tree-pine" class="w-4 h-4"></i><span class="text-sm">Forestry Conservation</span>
+            </div>
             <div class="px-6 py-2 mt-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-t border-slate-800 pt-4">Legal & Compliance</div>
             <div onclick="switchView('ownership')" id="nav-ownership" class="nav-link">
                 <i data-lucide="briefcase" class="w-4 h-4"></i><span class="text-sm">Title & Ownership</span>
@@ -76,6 +79,7 @@
             <div class="flex gap-3">
                 <button onclick="openTradeModal('Energy')" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold transition-colors">Execute Energy Trade</button>
                 <button onclick="openTradeModal('Water')" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-colors">Execute Water Trade</button>
+                <button onclick="openTransferModal()" class="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-semibold transition-colors">Change Ownership</button>
             </div>
         </header>
 
@@ -165,8 +169,9 @@
                         <thead class="bg-slate-800 text-slate-300">
                             <tr>
                                 <th class="px-6 py-3 font-semibold">Timestamp</th>
-                                <th class="px-6 py-3 font-semibold">Resource ID</th>
-                                <th class="px-6 py-3 font-semibold">Transaction Type</th>
+                                <th class="px-6 py-3 font-semibold">Table / Resource ID</th>
+                                <th class="px-6 py-3 font-semibold">Transaction / Action</th>
+                                <th class="px-6 py-3 font-semibold">Changes (Old &rarr; New)</th>
                                 <th class="px-6 py-3 font-semibold">Status</th>
                             </tr>
                         </thead>
@@ -300,6 +305,48 @@
                 </div>
             </div>
 
+
+            <div id="view-forestry" class="view-section space-y-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-semibold text-white">Forestry Conservation</h2>
+                    <span class="px-3 py-1 bg-emerald-900/30 text-emerald-400 border border-emerald-800 rounded-full text-xs font-medium">Monitoring</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="gdlr-card p-6 border-t-2 border-t-emerald-400">
+                        <h3 class="text-sm font-semibold text-slate-300 mb-2">Total Protected Trees</h3>
+                        <p id="card-forestry-trees" class="text-3xl font-bold text-white">Loading...</p>
+                    </div>
+                    <div class="gdlr-card p-6">
+                        <h3 class="text-sm font-semibold text-slate-300 mb-2">Carbon Offset Potential</h3>
+                        <p id="card-forestry-carbon" class="text-3xl font-bold text-emerald-400">Loading...</p>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-semibold text-white">Conservation Assets</h3>
+                    <div class="flex gap-3">
+                        <input type="text" id="search-forestry" placeholder="Search ID..." class="bg-slate-800 text-white px-3 py-1.5 rounded text-xs border border-slate-700 outline-none focus:border-emerald-500 w-48">
+                        <select id="sort-forestry" class="bg-slate-800 text-white px-3 py-1.5 rounded text-xs border border-slate-700 outline-none focus:border-emerald-500">
+                            <option value="newest">Newest First</option>
+                            <option value="capacity_desc">Capacity (High to Low)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="gdlr-card p-0 overflow-hidden">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-800 text-slate-300">
+                            <tr>
+                                <th class="px-6 py-3 font-semibold">Asset ID</th>
+                                <th class="px-6 py-3 font-semibold">Type</th>
+                                <th class="px-6 py-3 font-semibold">Protected Capacity</th>
+                                <th class="px-6 py-3 font-semibold">Carbon Credits</th>
+                                <th class="px-6 py-3 font-semibold">Created At</th>
+                            </tr>
+                        </thead>
+                        <tbody id="forestry-body" class="text-slate-400 divide-y divide-slate-800"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <div id="view-ownership" class="view-section space-y-6">
                 <div class="flex items-center justify-between mb-6">
                     <h2 class="text-2xl font-semibold text-white">Title & Ownership Directory</h2>
@@ -385,13 +432,26 @@
             <div class="space-y-4">
                 <div>
                     <label class="text-[10px] text-slate-500 uppercase font-bold">Parcel to Transfer</label>
-                    <input type="text" id="transfer-parcel" readonly class="w-full bg-slate-800 text-slate-300 p-2 rounded text-sm mt-1 border border-slate-700 outline-none font-mono text-xs cursor-not-allowed">
+                    <select id="transfer-parcel" class="w-full bg-slate-800 text-white p-2 rounded text-sm mt-1 border border-slate-700 focus:border-blue-500 outline-none font-mono text-xs">
+                    </select>
                 </div>
                 <div>
-                    <label class="text-[10px] text-slate-500 uppercase font-bold">New Owner</label>
-                    <select id="transfer-new-owner" class="w-full bg-slate-800 text-white p-2 rounded text-sm mt-1 border border-slate-700 focus:border-blue-500 outline-none">
-                        <!-- Populated by JS -->
-                    </select>
+                    <label class="text-[10px] text-slate-500 uppercase font-bold">New Owner Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="transfer-owner-name" placeholder="Full Legal Name" class="w-full bg-slate-800 text-white p-2 rounded text-sm mt-1 border border-slate-700 focus:border-blue-500 outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase font-bold">Entity Type</label>
+                        <select id="transfer-entity-type" class="w-full bg-slate-800 text-white p-2 rounded text-sm mt-1 border border-slate-700 focus:border-blue-500 outline-none">
+                            <option value="Private">Private Citizen</option>
+                            <option value="Corporate">Corporate</option>
+                            <option value="Government">Government</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase font-bold">Contact Info <span class="text-red-500">*</span></label>
+                        <input type="text" id="transfer-contact" placeholder="Email / Phone" class="w-full bg-slate-800 text-white p-2 rounded text-sm mt-1 border border-slate-700 focus:border-blue-500 outline-none">
+                    </div>
                 </div>
                 <div class="pt-4 border-t border-slate-800">
                     <button onclick="executeTransfer()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded transition-colors shadow-lg shadow-blue-900/50">

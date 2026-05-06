@@ -10,7 +10,11 @@ router.get('/ledger', async (req, res) => {
             SELECT 
                 TO_CHAR(changed_at, 'YYYY-MM-DD HH24:MI:SS') AS timestamp, 
                 record_id AS resource_id, 
+                table_name,
+                action_type,
                 UPPER(table_name) || '_' || action_type AS action, 
+                old_value,
+                new_value,
                 hash,
                 'COMMITTED' AS status 
             FROM audit_log
