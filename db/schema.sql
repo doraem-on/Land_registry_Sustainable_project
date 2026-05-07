@@ -24,7 +24,7 @@ CREATE TABLE LAND_PARCEL (
 -- Spatial Index
 CREATE INDEX idx_parcel_geometry ON LAND_PARCEL USING GIST (geo_boundary);
 
--- Prevent Overlap Trigger
+-- Prevent Overlap Trigger .
 CREATE OR REPLACE FUNCTION prevent_parcel_overlap()
 RETURNS TRIGGER AS $$
 BEGIN
