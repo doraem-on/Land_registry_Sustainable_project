@@ -4,7 +4,7 @@ AS $procedure$
 DECLARE
     new_parcel_id UUID;
 BEGIN
-    -- 1. Create the land parcel as a spatial polygon (square around the point)
+    -- 1. Create the land parcel as a spatial polygon (square around the point).
     INSERT INTO LAND_PARCEL (geo_boundary, area_sqm)
     VALUES (ST_SetSRID(ST_MakeEnvelope(p_lng - 0.0005, p_lat - 0.0005, p_lng + 0.0005, p_lat + 0.0005), 4326), 1000)
     RETURNING parcel_id INTO new_parcel_id;
